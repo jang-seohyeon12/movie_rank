@@ -1,20 +1,22 @@
 import requests
 import os
 import platform
-
-# BeautifulSoup는 이제 장르별 순위에서는 필요 없으므로, import 목록에서 제거해도 무방합니다.
-# 하지만 다른 기능에서 사용하므로 일단 둡니다.
+from datetime import datetime, timedelta
+from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 
+# --- 1단계: 여기에 발급받은 KOFIC API 키를 붙여넣으세요 ---
+KOFIC_API_KEY = "e7e2a6f478bfcf209e468cff36eb7ee0"
+
 def clear_screen():
-    """콘솔 화면을 깨끗하게 지우는 함수"""
     if platform.system() == 'Windows':
         os.system('cls')
     else:
         os.system('clear')
 
+# --- 네이버 크롤링 기반 함수 (안정적으로 동작하는 기능들) ---
+
 def get_soup(url):
-    """주어진 URL의 BeautifulSoup 객체를 반환하는 함수 (박스오피스용)"""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers)
@@ -24,14 +26,11 @@ def get_soup(url):
         print(f"오류: 웹사이트에 접속할 수 없습니다. ({e})")
         return None
 
-# --- 기존 박스오피스 함수들은 그대로 사용 ---
-
 def show_all_time_box_office():
     clear_screen()
     print("==============================================")
     print("     🏆 국내 영화 역대 박스오피스 TOP 10 🏆")
     print("==============================================\n")
-    print("데이터를 불러오는 중입니다...\n")
     url = "https://search.naver.com/search.naver?query=역대+박스오피스+순위"
     soup = get_soup(url)
     if not soup: return
@@ -61,7 +60,6 @@ def show_monthly_box_office():
     except ValueError:
         print("\n[오류] 연도와 월은 숫자로만 입력해주세요.")
         return
-    print(f"\n{year}년 {month}월의 데이터를 불러오는 중입니다...\n")
     url = f"https://search.naver.com/search.naver?query={year}년+{month}월+영화+순위"
     soup = get_soup(url)
     if not soup: return
@@ -82,81 +80,118 @@ def show_monthly_box_office():
         else:
             print(f" {(i+1):>2}위. {title:<25} (관객수 정보 없음)")
 
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-#           [최종 수정] 장르별 랭킹 함수를 API 호출 방식으로 완전히 변경
-# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+# --- KOFIC API 기반 함수 (안정성을 확보한 기능들) ---
+
+def check_api_key():
+    if KOFIC_API_KEY == "e7e2a6f478bfcf209e468cff36eb7ee0":
+        print("\n[오류] 코드 상단에 KOFIC API 키를 먼저 입력해주세요.")
+        return False
+    return True
+
 def show_genre_ranking():
-    """장르별 영화 평점 순위 TOP 10을 출력하는 함수 (API 호출 버전)"""
     clear_screen()
     print("==============================================")
-    print("     🎬 장르별 영화 추천 (평점순) 🎬")
+    print("     🎬 장르별 영화 추천 (KOFIC 기반) 🎬")
     print("==============================================\n")
+    if not check_api_key(): return
 
-    genres = {
-        '1': ('코미디', '11'),
-        '2': ('로맨스/멜로', '2'),
-        '3': ('스릴러', '6'),
-        '4': ('SF', '8')
-    }
-
-    print("선택할 장르의 번호를 입력해주세요.")
-    for key, (name, _) in genres.items():
+    genres = {'1': '드라마', '2': '판타지', '3': '서부', '4': '공포', '5': '로맨스', '6': '모험', '7': '스릴러', '8': '느와르', '9': '컬트', '10': '다큐멘터리', '11': '코미디', '12': '가족', '13': '미스터리', '14': '전쟁', '15': '애니메이션', '16': '범죄', '17': '뮤지컬', '18': 'SF', '19': '액션'}
+    print("추천받고 싶은 장르의 번호를 입력하세요.")
+    for key, name in genres.items():
         print(f"  {key}. {name}")
     
     choice = input("\n▶ 장르 선택: ")
-
     if choice not in genres:
-        print("\n[오류] 잘못된 번호를 선택했습니다.")
+        print("\n[오류] 잘못된 번호입니다.")
         return
 
-    genre_name, genre_code = genres[choice]
-    print(f"\n'{genre_name}' 장르의 영화 평점 순위를 불러오는 중입니다...\n")
-    
-    # [수정] 네이버 영화의 실제 데이터 API 주소로 직접 요청
-    api_url = f"https://api.movie.naver.com/ranking/pnt/v2/current?pntCode=EXT&offset=0&limit=10&genreCode={genre_code}"
-    
+    genre_name = genres[choice]
+    print(f"\n'{genre_name}' 장르의 인기 영화 10편을 검색합니다...\n")
+
     try:
-        # [수정] API 호출 시에는 Referer 헤더를 포함해주는 것이 좋음
-        headers = {'Referer': 'https://movie.naver.com/movie/sdb/rank/rmovie.naver'}
-        res = requests.get(api_url, headers=headers)
+        api_url = f"http://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json?key={KOFIC_API_KEY}&itemPerPage=10&repGenreNm={quote_plus(genre_name)}"
+        res = requests.get(api_url)
         res.raise_for_status()
-
-        # [수정] 응답 결과를 JSON 형태로 변환
         data = res.json()
-        
-        # [수정] JSON 데이터 구조에 맞게 영화 목록을 가져옴
-        movie_list = data.get('content', {}).get('movieList', [])
-
+        movie_list = data.get('movieListResult', {}).get('movieList', [])
         if not movie_list:
-            print("해당 장르의 순위 정보를 가져올 수 없습니다.")
+            print("해당 장르의 영화를 찾지 못했습니다.")
+            return
+        for i, movie in enumerate(movie_list):
+            title = movie.get('movieNm')
+            year = movie.get('prdtYear')
+            directors = ", ".join([d.get('peopleNm', '') for d in movie.get('directors', [])])
+            print(f" {i+1:>2}위. {title} ({year}) / 감독: {directors}")
+    except Exception as e:
+        print(f"오류: KOFIC API 접속 또는 데이터 처리 중 문제가 발생했습니다. ({e})")
+
+
+def search_movie_details():
+    clear_screen()
+    print("==================================================")
+    print("           🔎 영화 상세 정보 검색 🔎")
+    print("==================================================\n")
+    if not check_api_key(): return
+
+    movie_title = input("▶ 검색할 영화 제목을 입력하세요: ")
+    print(f"\n'{movie_title}' 정보를 검색합니다...\n")
+
+    try:
+        kofic_url = f"http://kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json?key={KOFIC_API_KEY}&movieNm={quote_plus(movie_title)}"
+        res_kofic = requests.get(kofic_url)
+        res_kofic.raise_for_status()
+        kofic_data = res_kofic.json()
+        movie_list = kofic_data.get('movieListResult', {}).get('movieList', [])
+        if not movie_list:
+            print("해당하는 영화 정보를 KOFIC에서 찾을 수 없습니다.")
             return
 
-        for movie in movie_list:
-            rank = movie.get('rank')
-            title = movie.get('movieName')
-            rating = movie.get('pnt')
-            print(f" {rank:>2}위. {title:<25} (평점: {rating})")
-
-    except requests.exceptions.RequestException as e:
-        print(f"오류: 데이터 API에 접속할 수 없습니다. ({e})")
+        target_movie = movie_list[0]
+        title = target_movie.get('movieNm')
+        year = target_movie.get('prdtYear')
+        genre = target_movie.get('repGenreNm')
+        directors = ", ".join([d.get('peopleNm', '') for d in target_movie.get('directors', [])])
     except Exception as e:
-        print(f"오류: 데이터를 처리하는 중 문제가 발생했습니다. ({e})")
+        print(f"오류: KOFIC에서 영화 정보를 가져오는 데 실패했습니다. ({e})")
+        return
+
+    try:
+        naver_url = f"https://search.naver.com/search.naver?query={quote_plus(title + ' ' + year)}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res_naver = requests.get(naver_url, headers=headers)
+        res_naver.raise_for_status()
+        soup = BeautifulSoup(res_naver.text, "html.parser")
+        rating_tag = soup.select_one(".sc_view_rating .star_score .num")
+        rating = rating_tag.get_text(strip=True) if rating_tag else "정보 없음"
+        plot_tag = soup.select_one("p.desc._text")
+        plot = plot_tag.get_text(strip=True) if plot_tag else "줄거리 정보 없음"
+    except Exception:
+        rating, plot = "정보 없음", "줄거리 정보 없음"
+
+    print("--------------------------------------------------")
+    print(f"■ 제목: {title} ({year})")
+    print(f"■ 감독: {directors}")
+    print(f"■ 장르: {genre}")
+    print(f"■ 네티즌 평점: {rating}")
+    print("--------------------------------------------------")
+    print("■ 줄거리:")
+    print(f"   {plot if plot != '줄거리 정보 없음' else '   (줄거리 정보를 가져올 수 없습니다.)'}")
+    print("--------------------------------------------------")
 
 
 def main():
-    """메인 실행 함수"""
     while True:
         clear_screen()
         print("==============================================")
-        print("      🎬 영화 순위 및 추천 프로그램 🎬      ")
+        print("     🎬 영화 정보 통합 프로그램 (최종본) 🎬     ")
         print("==============================================\n")
-        print("  1. 국내 역대 박스오피스 순위")
-        print("  2. 월별 국내 박스오피스 순위")
-        print("  3. 장르별 영화 추천 (평점순)")
-        print("  4. 프로그램 종료\n")
+        print("  1. 국내 역대 박스오피스 순위 (Naver 기반)")
+        print("  2. 월별 국내 박스오피스 순위 (Naver 기반)")
+        print("  3. 장르별 영화 추천 (KOFIC 기반)")
+        print("  4. 영화 상세 정보 검색 (KOFIC + Naver)")
+        print("  5. 프로그램 종료\n")
         
         choice = input("▶ 메뉴를 선택해주세요: ")
-
         if choice == '1':
             show_all_time_box_office()
         elif choice == '2':
@@ -164,13 +199,14 @@ def main():
         elif choice == '3':
             show_genre_ranking()
         elif choice == '4':
+            search_movie_details()
+        elif choice == '5':
             print("\n프로그램을 종료합니다. 이용해주셔서 감사합니다.")
             break
         else:
-            print("\n[오류] 1, 2, 3, 4 중에서 선택해주세요.")
+            print("\n[오류] 메뉴에 있는 번호 중에서 선택해주세요.")
 
         input("\n...엔터 키를 누르면 메인 메뉴로 돌아갑니다.")
-
 
 if __name__ == "__main__":
     main()
