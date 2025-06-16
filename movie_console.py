@@ -1,7 +1,10 @@
 import requests
-from bs4 import BeautifulSoup
 import os
 import platform
+
+# BeautifulSoup는 이제 장르별 순위에서는 필요 없으므로, import 목록에서 제거해도 무방합니다.
+# 하지만 다른 기능에서 사용하므로 일단 둡니다.
+from bs4 import BeautifulSoup
 
 def clear_screen():
     """콘솔 화면을 깨끗하게 지우는 함수"""
@@ -11,9 +14,9 @@ def clear_screen():
         os.system('clear')
 
 def get_soup(url):
-    """주어진 URL의 BeautifulSoup 객체를 반환하는 함수"""
+    """주어진 URL의 BeautifulSoup 객체를 반환하는 함수 (박스오피스용)"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers)
         res.raise_for_status()
         return BeautifulSoup(res.text, "html.parser")
@@ -21,24 +24,21 @@ def get_soup(url):
         print(f"오류: 웹사이트에 접속할 수 없습니다. ({e})")
         return None
 
+# --- 기존 박스오피스 함수들은 그대로 사용 ---
+
 def show_all_time_box_office():
-    """국내 영화 역대 박스오피스 TOP 10을 출력하는 함수"""
     clear_screen()
     print("==============================================")
     print("     🏆 국내 영화 역대 박스오피스 TOP 10 🏆")
     print("==============================================\n")
     print("데이터를 불러오는 중입니다...\n")
-
     url = "https://search.naver.com/search.naver?query=역대+박스오피스+순위"
     soup = get_soup(url)
-    if not soup:
-        return
-
+    if not soup: return
     container = soup.find("div", attrs={"class": "_svp_list"})
     if not container:
         print("오류: 박스오피스 정보를 찾을 수 없습니다.")
         return
-
     movies = container.find_all("div", attrs={"class": "list_item"})
     for i, movie in enumerate(movies[:10]):
         title = movie.find("strong", class_="title").get_text(strip=True)
@@ -50,38 +50,29 @@ def show_all_time_box_office():
             print(f" {(i+1):>2}위. {title:<25} (관객수 정보 없음)")
 
 def show_monthly_box_office():
-    """사용자에게 연도와 월을 입력받아 월별 박스오피스 TOP 10을 출력하는 함수"""
     clear_screen()
     print("==============================================")
     print("     📅 월별 국내 박스오피스 TOP 10 📅")
     print("==============================================\n")
-    
     try:
         year = input("▶ 조회할 연도를 입력하세요 (예: 2024): ")
         month = input("▶ 조회할 월을 입력하세요 (예: 5): ")
-        int(year) # 숫자 확인용
-        int(month) # 숫자 확인용
+        int(year); int(month)
     except ValueError:
         print("\n[오류] 연도와 월은 숫자로만 입력해주세요.")
         return
-
     print(f"\n{year}년 {month}월의 데이터를 불러오는 중입니다...\n")
-    
     url = f"https://search.naver.com/search.naver?query={year}년+{month}월+영화+순위"
     soup = get_soup(url)
-    if not soup:
-        return
-
+    if not soup: return
     container = soup.find("div", attrs={"class": "_svp_list"})
     if not container:
         print(f"오류: {year}년 {month}월 박스오피스 정보를 찾을 수 없습니다.")
         return
-
     movies = container.find_all("div", attrs={"class": "list_item"})
     if not movies:
         print(f"{year}년 {month}월에 대한 순위 정보가 없습니다.")
         return
-
     for i, movie in enumerate(movies[:10]):
         title = movie.find("strong", class_="title").get_text(strip=True)
         audience_span = movie.find("span", string=lambda t: t and "관객수" in t)
@@ -91,9 +82,11 @@ def show_monthly_box_office():
         else:
             print(f" {(i+1):>2}위. {title:<25} (관객수 정보 없음)")
 
-
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+#           [최종 수정] 장르별 랭킹 함수를 API 호출 방식으로 완전히 변경
+# ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 def show_genre_ranking():
-    """장르별 영화 평점 순위 TOP 10을 출력하는 함수"""
+    """장르별 영화 평점 순위 TOP 10을 출력하는 함수 (API 호출 버전)"""
     clear_screen()
     print("==============================================")
     print("     🎬 장르별 영화 추천 (평점순) 🎬")
@@ -119,28 +112,35 @@ def show_genre_ranking():
     genre_name, genre_code = genres[choice]
     print(f"\n'{genre_name}' 장르의 영화 평점 순위를 불러오는 중입니다...\n")
     
-    url = f"https://movie.naver.com/movie/sdb/rank/rmovie.naver?sel=pnt&tg={genre_code}"
-    soup = get_soup(url)
-    if not soup:
-        return
+    # [수정] 네이버 영화의 실제 데이터 API 주소로 직접 요청
+    api_url = f"https://api.movie.naver.com/ranking/pnt/v2/current?pntCode=EXT&offset=0&limit=10&genreCode={genre_code}"
+    
+    try:
+        # [수정] API 호출 시에는 Referer 헤더를 포함해주는 것이 좋음
+        headers = {'Referer': 'https://movie.naver.com/movie/sdb/rank/rmovie.naver'}
+        res = requests.get(api_url, headers=headers)
+        res.raise_for_status()
 
-    ranking_table = soup.find("table", class_="list_ranking")
-    if not ranking_table:
-        print("오류: 장르별 순위 정보를 찾을 수 없습니다.")
-        return
+        # [수정] 응답 결과를 JSON 형태로 변환
+        data = res.json()
+        
+        # [수정] JSON 데이터 구조에 맞게 영화 목록을 가져옴
+        movie_list = data.get('content', {}).get('movieList', [])
 
-    movies = ranking_table.find_all("tr")
-    rank = 1
-    for movie in movies:
-        title_div = movie.find("div", class_="tit5")
-        point_td = movie.find("td", class_="point")
-        if title_div and point_td:
-            title = title_div.a.get_text(strip=True)
-            rating = point_td.get_text(strip=True)
+        if not movie_list:
+            print("해당 장르의 순위 정보를 가져올 수 없습니다.")
+            return
+
+        for movie in movie_list:
+            rank = movie.get('rank')
+            title = movie.get('movieName')
+            rating = movie.get('pnt')
             print(f" {rank:>2}위. {title:<25} (평점: {rating})")
-            rank += 1
-            if rank > 10:
-                break
+
+    except requests.exceptions.RequestException as e:
+        print(f"오류: 데이터 API에 접속할 수 없습니다. ({e})")
+    except Exception as e:
+        print(f"오류: 데이터를 처리하는 중 문제가 발생했습니다. ({e})")
 
 
 def main():
@@ -174,4 +174,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
